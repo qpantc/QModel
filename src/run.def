@@ -1,0 +1,14 @@
+# gird size
+
+X_LENGTH = 201
+Y_LENGTH = 201
+
+
+# time
+
+TIME_STEPS = 1000
+
+
+# model parameters
+
+DECAY = 0.02
