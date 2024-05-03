@@ -82,6 +82,33 @@ def fth(tl, hd, se, physcon = Constants()):
     fh = fc25 / fc
     return fh
 
+
+def saturation_vapor_pressure(T):
+    """计算温度下的饱和水蒸气压(kPa)"""
+    A = 6.112  # hPa
+    B = 17.67
+    C = 243.5  # °C
+    return A * np.exp(B * T / (C + T)) / 10  # 将结果转换为 kPa
+
+def actual_water_vapor_pressure(H2O_concentration, P, constant):
+    """计算实际水蒸气压(kPa)"""
+    return H2O_concentration * constant * P / 1000  # 将水汽浓度转换为 kPa
+
+def relative_humidity(T, H2O_concentration, P):
+    """计算相对湿度(%)"""
+    P_actual = actual_water_vapor_pressure(H2O_concentration, P, 0.018015)  # 水的摩尔质量为 18.015 g/mol,将其转换为 kPa
+    P_sat = saturation_vapor_pressure(T)
+    RH = (P_actual / P_sat) * 100
+    return RH
+
+def vapor_pressure_deficit(T, H2O_concentration, P):
+    """计算蒸汽压差(VPD,kPa)"""
+    P_actual = actual_water_vapor_pressure(H2O_concentration, P, 0.0987)
+    P_sat = saturation_vapor_pressure(T)
+    VPD = P_sat - P_actual
+    return VPD
+
+
 def Q_model(leaf = Leaf(),tleaf= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82,cost = [0.11,0.8,0.00001]):
     
     # Vc_curve = fth (tl = tleaf + 273.15 , hd = leaf.vcmaxha, se = leaf.se) * ft(tl = tleaf + 273.15, ha = leaf.vcmaxha)
@@ -135,7 +162,7 @@ def Q_model(leaf = Leaf(),tleaf= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82
     U_poly = (2*p_poly**3-9*p_poly*q_poly+27*r_poly)/54
 
     if Q_poly>0 and (U_poly/Q_poly**(3/2) > -1 and U_poly/Q_poly**(3/2) < 1):
-        Psii_poly = np.arccos(U_poly/Q_poly**(3/2))
+        Psii_poly = math.acos(U_poly/Q_poly**(3/2))
 
 
         ci1 = 0-2*Q_poly**0.5*np.cos(Psii_poly/3) - p_poly/3
@@ -171,4 +198,12 @@ def Q_model(leaf = Leaf(),tleaf= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82
                 'gs': 0
             })
     else:
-        print('parameters error')
+        # print('parameters error')
+        return({
+                'An': 0,
+                'cp':cp,
+                'Ci': Ca,
+                'Vc':0,
+                'E':0,
+                'gs': 0
+            })
