@@ -90,29 +90,34 @@ def saturation_vapor_pressure(T):
     C = 243.5  # °C
     return A * np.exp(B * T / (C + T)) / 10  # 将结果转换为 kPa
 
-def actual_water_vapor_pressure(H2O_concentration, P, constant):
+def actual_water_vapor_pressure(H2O_concentration, P):
     """计算实际水蒸气压(kPa)"""
-    return H2O_concentration * constant * P / 1000  # 将水汽浓度转换为 kPa
+    # 将水汽浓度转换为水的分子数
+    n_H2O = H2O_concentration / 1000  # 毫摩尔转换为摩尔
+    # 计算水的分压,理想气体状态下,水蒸气的分压即为水汽浓度
+    P_H2O = n_H2O / (n_H2O + 1) * P
+    return P_H2O
 
 def relative_humidity(T, H2O_concentration, P):
     """计算相对湿度(%)"""
-    P_actual = actual_water_vapor_pressure(H2O_concentration, P, 0.018015)  # 水的摩尔质量为 18.015 g/mol,将其转换为 kPa
+    P_actual = actual_water_vapor_pressure(H2O_concentration, P)
     P_sat = saturation_vapor_pressure(T)
     RH = (P_actual / P_sat) * 100
     return RH
 
+
 def vapor_pressure_deficit(T, H2O_concentration, P):
     """计算蒸汽压差(VPD,kPa)"""
-    P_actual = actual_water_vapor_pressure(H2O_concentration, P, 0.0987)
+    P_actual = actual_water_vapor_pressure(H2O_concentration, P)
     P_sat = saturation_vapor_pressure(T)
     VPD = P_sat - P_actual
     return VPD
 
 
-def Q_model(leaf = Leaf(),tleaf= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82,cost = [0.11,0.8,0.00001]):
+def Q_model(leaf = Leaf(),Tair= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82,cost = [0.11,0.8,0.00001]):
     
-    # Vc_curve = fth (tl = tleaf + 273.15 , hd = leaf.vcmaxha, se = leaf.se) * ft(tl = tleaf + 273.15, ha = leaf.vcmaxha)
-    a = cost[0]*(1+(abs(tleaf-30)/100)**0.5) # cost for unit vcmas
+    # Vc_curve = fth (tl = Tair + 273.15 , hd = leaf.vcmaxha, se = leaf.se) * ft(tl = Tair + 273.15, ha = leaf.vcmaxha)
+    a = cost[0]*(1+(abs(Tair-30)/100)**0.5) # cost for unit vcmax
     b = cost[1]*1000/PAR# cost for unit E
     c = cost[2]/RH  # cost for unit gs
     
@@ -127,13 +132,13 @@ def Q_model(leaf = Leaf(),tleaf= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82
 
     Ca=co2_to_ca(co2 = co2, patm = patm)
     
-    # We compute the adjusted parameter values for leaf temperature
+    # We compute the adjusted parameter values for leaf Tairerature
     # for Kc
-    kc = leaf.kc25 #* ft(tleaf + 273.15 , leaf.kcha)
+    kc = leaf.kc25 * ft(Tair + 273.15 , leaf.kcha)
     # for Ko
-    ko = leaf.ko25 #* ft(tleaf+ 273.15 , leaf.koha)
+    ko = leaf.ko25 * ft(Tair+ 273.15 , leaf.koha)
     # for Gamma*
-    cp = leaf.cp25 #* ft(tleaf+ 273.15 , leaf.cpha)
+    cp = leaf.cp25 * ft(Tair+ 273.15 , leaf.cpha)
     # cp = min(60,cp)
 
     kco = kc*(1+Oi/ko)
@@ -176,34 +181,136 @@ def Q_model(leaf = Leaf(),tleaf= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82
         cs = Ca - An*1400/leaf.gb
         gs = An*1600/(cs-ci2)
         
-        An = An - Vcmax*a - E * b - gs * c
+        An = An - Vcmax*a - E * b # - gs * c
 
         if(An > 0 and Vcmax > 0):
 
             return({
-                'An': An,
-                'cp':cp,
-                'Ci': ci2,
-                'Vc':Vcmax,
-                'E':E,
-                'gs': gs
+                'An': [An],
+                'cp':[cp],
+                'Ci': [ci2],
+                'Vc':[Vcmax],
+                'E':[E],
+                'gs': [gs]
             })
         else:
             return({
-                'An': 0,
-                'cp':cp,
-                'Ci': Ca,
-                'Vc':0,
-                'E':0,
-                'gs': 0
+                'An': [0],
+                'cp':[cp],
+                'Ci': [Ca],
+                'Vc':[0],
+                'E':[0],
+                'gs': [0]
             })
     else:
         # print('parameters error')
         return({
-                'An': 0,
-                'cp':cp,
-                'Ci': Ca,
-                'Vc':0,
-                'E':0,
-                'gs': 0
+                'An': [0],
+                'cp':[cp],
+                'Ci': [Ca],
+                'Vc':[0],
+                'E':[0],
+                'gs': [0]
             })
+
+
+def Q_model_parameter(leaf = Leaf(),Tair= 27,co2 = 400,RH = 0.71,PAR = 1000,patm = 101.82,cost = [0.11,0.8,0.00001]):
+    
+    # Vc_curve = fth (tl = Tair + 273.15 , hd = leaf.vcmaxha, se = leaf.se) * ft(tl = Tair + 273.15, ha = leaf.vcmaxha)
+    a = cost[0] # cost for unit vc
+    b = cost[1]# cost for unit E
+    c = cost[2] # cost for unit gs
+    
+    
+    
+    # ENV
+    Iabs= PAR*0.5
+    Oi = 209 # we fic Oi to atmospheric concentrations
+
+    constant = Constants()
+    
+
+    Ca=co2_to_ca(co2 = co2, patm = patm)
+    
+    # We compute the adjusted parameter values for leaf Tairerature
+    # for Kc
+    kc = leaf.kc25 #* ft(Tair + 273.15 , leaf.kcha)
+    # for Ko
+    ko = leaf.ko25 #* ft(Tair+ 273.15 , leaf.koha)
+    # for Gamma*
+    cp = leaf.cp25 #* ft(Tair+ 273.15 , leaf.cpha)
+    # cp = min(60,cp)
+
+    kco = kc*(1+Oi/ko)
+
+
+    # An = (Ca - ci*g1*RH*1000/(g1*RH*1000 -1600))*gb/1400
+    p = Ca*leaf.gb/1400
+    q = leaf.g1*leaf.gb*RH*1000/(leaf.g1*RH*1000 -1600)/1400
+    
+    M = c*leaf.g1*Ca*(leaf.gb**2) * RH * 1000 * q
+
+
+    A2 = (a*q + b*q/(leaf.alpha_l*Iabs) - q)
+    A1 = 2*q*cp + a*q*kco - a*q/(leaf.alpha_l*Iabs)*cp + b*q*cp - a*q*cp - a*q*kco - 3*b*q/(leaf.alpha_l*Iabs)*cp
+    A0 = q*cp**2 -a*q*kco*cp - 2*b*q/(leaf.alpha_l*Iabs)*cp**2 + p*(a*(cp+kco)+3*b/(leaf.alpha_l*Iabs)*cp)
+
+    N1 = 1400*q
+    N0 = (Ca*leaf.gb - 1400*p)
+
+
+    p_poly = (A1*N1 + A2*N0)/(A2*N1)
+    q_poly = (A0*N1 + A1*N0)/(A2*N1)
+    r_poly = (A0*N0 + M)/(A2*N1)
+
+    Q_poly = (p_poly**2 - 3*q_poly)/9
+    U_poly = (2*p_poly**3-9*p_poly*q_poly+27*r_poly)/54
+
+    if Q_poly>0 and (U_poly/Q_poly**(3/2) > -1 and U_poly/Q_poly**(3/2) < 1):
+        Psii_poly = math.acos(U_poly/Q_poly**(3/2))
+
+
+        ci1 = 0-2*Q_poly**0.5*np.cos(Psii_poly/3) - p_poly/3
+        ci2 = 0-2*Q_poly**0.5*np.cos((Psii_poly + 2*3.141592653)/3) - p_poly/3
+        ci3 = 0-2*Q_poly**0.5*np.cos((Psii_poly + 4*3.141592653)/3) - p_poly/3
+        
+        
+        An = p - q * ci2
+        Vcmax = An/(ci2-cp)*(ci2+kco)
+        E = An/(ci2-cp)*(ci2+2*cp)/(leaf.alpha_l*Iabs)
+        cs = Ca - An*1400/leaf.gb
+        gs = An*1600/(cs-ci2)
+        
+        An = An - Vcmax*a - E * b # - gs * c
+
+        if(An > 0 and Vcmax > 0):
+
+            return({
+                'An': [An],
+                'cp':[cp],
+                'Ci': [ci2],
+                'Vc':[Vcmax],
+                'E':[E],
+                'gs': [gs]
+            })
+        else:
+            return({
+                'An': [0],
+                'cp':[cp],
+                'Ci': [Ca],
+                'Vc':[0],
+                'E':[0],
+                'gs': [0]
+            })
+    else:
+        # print('parameters error')
+        return({
+                'An': [0],
+                'cp':[cp],
+                'Ci': [Ca],
+                'Vc':[0],
+                'E':[0],
+                'gs': [0]
+            })
+
+
